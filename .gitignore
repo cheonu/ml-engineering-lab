@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# MLflow local stores (generated output, never commit)
+mlruns/
+mlartifacts/
+mlflow.db
+
+# OS
+.DS_Store
