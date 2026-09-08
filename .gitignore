@@ -10,3 +10,13 @@ mlflow.db
 
 # OS
 .DS_Store
+
+# Data (tracked by DVC, not git) - but keep .dvc pointer files
+data/raw/*.csv
+*.zip
+
+# Kiro IDE config
+.kiro/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/

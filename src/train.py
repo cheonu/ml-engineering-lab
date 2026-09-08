@@ -1,55 +1,46 @@
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import mlflow
 from sklearn.ensemble import RandomForestClassifier
-from data import load_split
-from evaluate import compute_metrics
+from data import load_clean_dataset, split_churn
+from experiment import run_experiment
+import yaml
+import argparse
 
+def load_config(file_path: str) -> dict:
+    with open(file_path, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+    return cfg
 
-mlflow.set_tracking_uri("sqlite:///mlflow.db")
-mlflow.set_experiment("breast-cancer")
+def main(config_path):
+    cfg = load_config(config_path)
 
+    # build model from cfg
+    model = RandomForestClassifier(**cfg["model"]["params"])
 
+    # load + split data from cfg["data"]
+    df = load_clean_dataset(
+        cfg["data"]["filepath"],
+        cfg["data"]["drop_columns"],
+        cfg["data"]["to_numeric"],
+        cfg["data"]["categorical_columns"],
+        cfg["data"]["binary_columns"],
+    )
+    X_train, X_test, y_train, y_test = split_churn(df, target= cfg["data"]["target"])
+ 
+    run_experiment(cfg["experiment_name"], model,  
+        X_train, X_test, y_train,y_test,
+        cfg["model"]["params"],
+        pos_label=cfg["pos_label"], 
+        run_name=cfg["run_name"],
+    )
 
-# 3. Initialize the Random Forest Classifier
-max_depth_val = 3
-n_estimators_val = 100
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", required = True)
+    args = parser.parse_args()
+    main(args.config)
 
-
-rf_model = RandomForestClassifier(
-    n_estimators=n_estimators_val, 
-    max_depth=max_depth_val, 
-    random_state=48, 
-    n_jobs=-1)
-
-with mlflow.start_run(run_name="parent-run") as parent_run:
-
-    X_train, X_test, y_train, y_test = load_split()
-
-    # Train the model
-    rf_model.fit(X_train, y_train)
-
-    # Generate true predictions on test data
-    y_pred = rf_model.predict(X_test)
-
-
-    # Log metrics to MLflow
-    metrics = compute_metrics(y_test, y_pred)
-
-    mlflow.log_metric("accuracy", metrics["accuracy"]) 
-    mlflow.log_metric("f1_score", metrics["f1"])
-    mlflow.log_metric("tn", metrics["tn"])
-    mlflow.log_metric("fp", metrics["fp"])
-    mlflow.log_metric("fn", metrics["fn"])
-    mlflow.log_metric("tp", metrics["tp"])
-
-    mlflow.log_param("max_depth", max_depth_val)
-    mlflow.log_param("n_estimators", n_estimators_val)
-
-    mlflow.sklearn.log_model(rf_model, "model")
-
-print("Run successfully logged MLflow. backend!")
 
 
 
