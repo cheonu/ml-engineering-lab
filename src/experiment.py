@@ -5,7 +5,7 @@ import mlflow
 from evaluate import compute_metrics
 
 
-def run_experiment(experiment_name, model, X_train, X_test, y_train, y_test, params, pos_label=1,run_name=None):
+def run_experiment(experiment_name, model, X_train, X_test, y_train, y_test, params, pos_label=1,run_name=None, registered_model_name=None):
     
     mlflow.set_tracking_uri("sqlite:///mlflow.db")
     mlflow.set_experiment(experiment_name)
@@ -24,6 +24,6 @@ def run_experiment(experiment_name, model, X_train, X_test, y_train, y_test, par
         for key, value in params.items():
             mlflow.log_param(key, value)
 
-        mlflow.sklearn.log_model(model, "model")
+        mlflow.sklearn.log_model(model, "model",registered_model_name=registered_model_name)
 
     print("Run successfully logged MLflow. backend!")

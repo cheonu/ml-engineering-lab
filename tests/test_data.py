@@ -5,7 +5,7 @@ import pytest
 def clean_df():
     return load_clean_dataset(
         "data/raw/WA_Fn-UseC_-Telco-Customer-Churn.csv",
-        ["customerID"], "TotalCharges", cat_cols, bin_cols
+        ["customerID"], "TotalCharges"
     )
 
 cat_cols = ["MultipleLines", "InternetService", "OnlineSecurity", "OnlineBackup",
@@ -24,5 +24,5 @@ def test_no_missing_totalcharges(clean_df):
     assert clean_df["TotalCharges"].isna().sum() == 0
 
 def test_stratified_split_preserves_ratio(clean_df):
-    X_train, X_test, y_train, y_test = split_churn (clean_df, target="Churn_Yes", test_size=0.2, random_state=48)
+    X_train, X_test, y_train, y_test = split_churn (clean_df, target="Churn", test_size=0.2, random_state=48)
     assert abs(y_train.mean() - y_test.mean()) < 0.02
