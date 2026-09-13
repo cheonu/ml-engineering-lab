@@ -105,6 +105,9 @@ class as more important, trading precision for the recall the business needs.
   conversion, missing-value handling, and stratification of the train/test split.
 - **Serving** via FastAPI with a `/predict` endpoint (returns label + churn
   probability) and a `/health` endpoint (reports model load status).
+- **Drift monitoring** (`src/monitor.py`) with Evidently. It compares a reference
+  dataset against current data and flags feature drift — the signal that live data
+  has diverged from what the model was trained on, and that retraining may be needed.
 
 ---
 
@@ -154,6 +157,13 @@ curl -X POST http://127.0.0.1:8000/predict \
 # -> {"churn": 1, "churn_probability": 0.8967}
 ```
 
+**Check for data drift** (generates two HTML reports — a no-drift baseline and a
+simulated-drift example):
+
+```bash
+uv run python src/monitor.py
+```
+
 **Run the tests:**
 
 ```bash
@@ -188,5 +198,10 @@ uv run pytest
 
 - The tracking store is local SQLite; a team setup would move this to a shared
   Postgres + artifact store.
-- A natural extension is model monitoring (e.g. drift detection with Evidently) to
-  catch when the live data distribution diverges from training.
+- The drift check in `monitor.py` uses a simulated shift (all-month-to-month
+  contracts, a $30 charge increase) to demonstrate detection. A production version
+  would compare against real incoming batches and run on a schedule. Note the
+  simulation shifts `MonthlyCharges` but not `TotalCharges`; in reality a price
+  change would move both.
+- Further extensions: containerize the API (Docker) and add CI to run tests on every
+  push.
