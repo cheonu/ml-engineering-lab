@@ -1,8 +1,11 @@
 # Telco Customer Churn — End-to-End ML System
 
+![tests](https://github.com/cheonu/ml-engineering-lab/actions/workflows/tests.yml/badge.svg)
+
 An end-to-end machine learning project that predicts customer churn for a telecom
 company: from raw data cleaning through model training, experiment tracking, a
-versioned model registry, and a live prediction API.
+versioned model registry, a live prediction API, drift monitoring, and an
+automated retraining loop.
 
 The focus is on ML **engineering** — reproducibility, testing, and serving — not
 just model accuracy.
@@ -61,7 +64,19 @@ Pipeline ─ ColumnTransformer (encode categoricals) ─ RandomForest   src/trai
 MLflow  ─ track params/metrics + register model      src/experiment.py
   │
   ▼
-FastAPI ─ load from registry, serve predictions      src/serve.py
+FastAPI ─ load champion from registry, serve          src/serve.py
+```
+
+The full lifecycle then closes into a loop:
+
+```
+monitor drift ──► (if drift) retrain ──► compare new vs champion f1
+                                              │
+                        promote to @champion  │  keep current champion
+                        only if better  ◄─────┘
+                                │
+                                ▼
+                serving loads models:/churn-model@champion
 ```
 
 ---
@@ -108,6 +123,31 @@ class as more important, trading precision for the recall the business needs.
 - **Drift monitoring** (`src/monitor.py`) with Evidently. It compares a reference
   dataset against current data and flags feature drift — the signal that live data
   has diverged from what the model was trained on, and that retraining may be needed.
+- **Automated retraining loop** (`src/retrain.py`) — see below.
+- **Containerized** with Docker; the image bundles the code, dependencies, and the
+  model registry, and serves the API on port 8000.
+- **CI** via GitHub Actions runs the test suite on every push and pull request.
+
+---
+
+## Retraining Strategy
+
+Models decay as the world changes. `src/retrain.py` implements a closed loop:
+
+1. **Detect drift** — compare recent data against a reference set (`check_drift`).
+2. **Retrain only if drifted** — no drift means no retrain; the loop exits.
+3. **Gated promotion** — after retraining, compare the new model's churn f1 against
+   the current production model (the `@champion` alias in the registry). The new
+   model is promoted **only if it is better**; otherwise the existing champion is
+   kept.
+4. **Serving follows the champion** — `serve.py` loads `models:/churn-model@champion`,
+   so only a vetted model ever reaches production.
+
+The key design decision: **drift is a signal to investigate and retrain, not an
+automatic reason to deploy.** A new model is never shipped just because it was
+retrained — it must beat the incumbent on the business metric first. This guards
+against deploying a worse model when drift is caused by, say, a broken data feed
+rather than a genuine shift.
 
 ---
 
@@ -157,17 +197,31 @@ curl -X POST http://127.0.0.1:8000/predict \
 # -> {"churn": 1, "churn_probability": 0.8967}
 ```
 
-**Check for data drift** (generates two HTML reports — a no-drift baseline and a
-simulated-drift example):
+**Check for data drift** (prints the share of drifted columns for a no-drift
+baseline and a simulated-drift example):
 
 ```bash
 uv run python src/monitor.py
+```
+
+**Run the retraining loop** (checks drift, retrains if drifted, promotes only if the
+new model beats the current champion):
+
+```bash
+uv run python src/retrain.py
 ```
 
 **Run the tests:**
 
 ```bash
 uv run pytest
+```
+
+**Run in Docker** (builds an image with the app and model, serves on port 8000):
+
+```bash
+docker build -t churn-api:v1 .
+docker run -p 8000:8000 churn-api:v1
 ```
 
 ---
@@ -185,9 +239,14 @@ uv run pytest
 │   ├── train.py            # config-driven entry point, builds the pipeline
 │   ├── experiment.py       # shared MLflow training/logging logic
 │   ├── evaluate.py         # metric computation
-│   └── serve.py            # FastAPI inference service
+│   ├── serve.py            # FastAPI inference service
+│   ├── monitor.py          # Evidently drift detection
+│   └── retrain.py          # drift-triggered retraining + gated promotion
 ├── tests/
 │   └── test_data.py        # data pipeline tests
+├── .github/workflows/
+│   └── tests.yml           # CI: run pytest on push/PR
+├── Dockerfile
 ├── pyproject.toml
 └── README.md
 ```
@@ -203,5 +262,9 @@ uv run pytest
   would compare against real incoming batches and run on a schedule. Note the
   simulation shifts `MonthlyCharges` but not `TotalCharges`; in reality a price
   change would move both.
-- Further extensions: containerize the API (Docker) and add CI to run tests on every
-  push.
+- The retraining loop uses churn f1 as the promotion criterion. A production system
+  would ideally gate on a measured drop in performance against ground-truth outcomes
+  (which arrive later), not on input drift alone.
+- Further extensions: schedule the retraining loop (cron / GitHub Actions
+  `on: schedule`), and move the tracking store to a shared Postgres + artifact store
+  for team use.
