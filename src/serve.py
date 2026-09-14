@@ -12,7 +12,7 @@ async def lifespan(app: FastAPI):
     
     global model
     try:
-        model_uri = "models:/churn-model/latest"
+        model_uri = "models:/churn-model@champion"
         model = mlflow.sklearn.load_model(model_uri, dst_path=None)
         print (f"Successfully loaded model from:{model_uri}")
     except Exception as e: 
